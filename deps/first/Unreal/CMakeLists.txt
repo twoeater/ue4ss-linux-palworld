@@ -77,7 +77,7 @@ if(${UE4SS_${TARGET}_BUILD_SHARED} EQUAL 0)
 endif()
 
 
-target_link_libraries(${TARGET} PUBLIC fmt File DynamicOutput SinglePassSigScanner Constructs Helpers Function)
+target_link_libraries(${TARGET} PUBLIC fmt File DynamicOutput SinglePassSigScanner Constructs Helpers Function patternsleuth_bind)
 if(WIN32)
     target_link_libraries(${TARGET} PUBLIC PolyHook_2 ASMHelper)
 else()

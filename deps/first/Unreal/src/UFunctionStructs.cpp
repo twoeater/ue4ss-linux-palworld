@@ -202,6 +202,19 @@ namespace RC::Unreal
             }
             else
             {
+                if (TheStack.Code() && !GNatives_Internal)
+                {
+                    // Without a verified VM dispatcher we cannot materialize
+                    // bytecode arguments for callbacks. Let the engine consume
+                    // the original frame instead of exposing unrelated Locals.
+                    static std::atomic_flag warned = ATOMIC_FLAG_INIT;
+                    if (!warned.test_and_set())
+                    {
+                        Output::send<LogLevel::Warning>(STR("Skipping native hook callbacks for bytecode calls: GNatives is unavailable.\n"));
+                    }
+                    Iterator->second.GetOriginalFuncPtr()(Context, TheStack, RESULT_DECL);
+                    return;
+                }
                 FFrame* NewStackPtr = &TheStack;
                 std::map<FProperty*, FOutParmRec*> OriginalOutParmsMap; // Map to track original out params
 

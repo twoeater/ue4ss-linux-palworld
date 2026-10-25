@@ -6300,6 +6300,10 @@ Overloads:
                 {
                     Output::send<LogLevel::Error>(STR("Mod '{}': Failed to execute main script: {}\n"), ensure_str(m_mod_name), ensure_str(main_script_path));
                 }
+                else
+                {
+                    Output::send(STR("Lua mod '{}': main.lua execution complete.\n"), ensure_str(m_mod_name));
+                }
             }
             else
             {

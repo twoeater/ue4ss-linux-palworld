@@ -1,5 +1,8 @@
 #include <chrono>
 #include <locale>
+#include <cstdio>
+#include <cstdlib>
+#include <atomic>
 
 #include <DynamicOutput/DebugConsoleDevice.hpp>
 #include <DynamicOutput/Output.hpp>
@@ -44,12 +47,17 @@ namespace RC::Output
 
     auto DebugConsoleDevice::receive_with_optional_arg(File::StringViewType fmt, [[maybe_unused]] int32_t optional_arg) const -> void
     {
+        static std::atomic<unsigned> receives{0};
+        const char* debug = std::getenv("UE4SS_DEBUG");
+        const bool trace = debug && std::atoi(debug) > 0 && receives.fetch_add(1) < 8;
+        if (trace) fprintf(stderr, "[UE4SS] Console write: entering (%zu UTF-16 code units)...\n", fmt.size());
         set_windows_console_out_mode_if_needed();
 
 #if ENABLE_OUTPUT_DEVICE_DEBUG_MODE
         RC_DEVICE_PRINT_FUNC(fmt, optional_arg, "DebugConsoleDevice received: ")
 #else
         RC_DEVICE_PRINT_FUNC(fmt, optional_arg, "")
+        if (trace) fprintf(stderr, "[UE4SS] Console write: complete.\n");
 #endif
     }
 } // namespace RC::Output

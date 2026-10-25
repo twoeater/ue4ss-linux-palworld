@@ -4,6 +4,14 @@ E2E Lua mods used to verify UE4SS-Linux behavior against a live Palworld
 server. Deploy by copying a mod directory into `<server>/Mods/` and enabling
 it in `Mods/mods.txt`, then restart and read `UE4SS.log`.
 
+## Box64Smoke
+
+Verifies startup inside the actual Box64 game process without changing game state:
+Lua error handling, delayed callbacks, engine-thread dispatch, and reflection of
+`/Script/Engine.Actor`. All five `[Box64Smoke]` markers must appear, ending with
+`GAME_THREAD_ALIVE_30S`. A loaded library or a healthy Docker container alone is
+not sufficient. Remove the mod and its `mods.txt` entry after validation.
+
 ## ErrorStorm
 
 Verifies the Lua error-handling contract on Linux:

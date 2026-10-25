@@ -56,6 +56,7 @@
 #ifdef __linux__
 #include <DiscordWebhook.hpp>
 #include <link.h>
+#include <Helpers/LinuxModules.hpp>
 #include <elf.h>
 #include <cstring>
 #endif
@@ -393,7 +394,11 @@ namespace RC
                 settings_manager.deserialize(m_settings_path_and_file);
                 UE4SS_DBG( "[UE4SS] Constructor: settings deserialized.\n");
 #ifdef __linux__
-                UE4SSDebug::set_debug_level(static_cast<int>(settings_manager.General.DebugLogLevel));
+                // An explicit environment override must survive loading the INI.
+                if (!std::getenv("UE4SS_DEBUG"))
+                {
+                    UE4SSDebug::set_debug_level(static_cast<int>(settings_manager.General.DebugLogLevel));
+                }
 #endif
             }
             catch (std::exception& e)
@@ -424,8 +429,10 @@ namespace RC
 #endif
 
             // Setup the log file
+            UE4SS_DBG("[UE4SS] Constructor: registering file logger...\n");
             auto& file_device = Output::set_default_devices<Output::NewFileDevice>();
             file_device.set_file_name_and_path(ensure_str((m_log_directory / m_log_file_name)));
+            UE4SS_DBG("[UE4SS] Constructor: file logger registered.\n");
 
             if (const auto ue4ss_mods_paths_var_raw = std::getenv("UE4SS_MODS_PATHS"); ue4ss_mods_paths_var_raw)
             {
@@ -438,7 +445,9 @@ namespace RC
                 }
             }
 
+            UE4SS_DBG("[UE4SS] Constructor: creating simple console...\n");
             create_simple_console();
+            UE4SS_DBG("[UE4SS] Constructor: simple console created.\n");
 
             if (settings_manager.Debug.DebugConsoleEnabled)
             {
@@ -475,7 +484,9 @@ namespace RC
             Output::send(STR("\n\nFound string '{}' at {}\n\n"), std::wstring_view{str_to_find}, string_address);
             //*/
 
+            UE4SS_DBG("[UE4SS] Constructor: writing first log message...\n");
             Output::send(STR("Console created\n"));
+            UE4SS_DBG("[UE4SS] Constructor: first log write returned; formatting version...\n");
             Output::send(STR("UE4SS - v{}.{}.{}{}{} - Git SHA #{}\n"),
                          UE4SS_LIB_VERSION_MAJOR,
                          UE4SS_LIB_VERSION_MINOR,
@@ -487,6 +498,7 @@ namespace RC
                                              : (UE4SS_LIB_IS_BETA == 0 ? STR(" Beta #?") : fmt::format(STR(" Beta #{}"), UE4SS_LIB_VERSION_BETA))),
                          ensure_str(UE4SS_LIB_BUILD_GITSHA));
 
+            UE4SS_DBG("[UE4SS] Constructor: version logged.\n");
             // Copyright banner in the UE4SS console
             Output::send<LogLevel::Normal>(STR(" Copyright (c) 2026 BlackBookOfficial\n"));
             Output::send<LogLevel::Normal>(STR(" https://github.com/BlackBookOfficial/ue4ss-linux-palworld\n"));
@@ -502,6 +514,7 @@ namespace RC
                 use_local_time = false;
             }
 #endif
+            UE4SS_DBG("[UE4SS] Constructor: resolving timezone...\n");
             if (use_local_time)
             {
                 try
@@ -526,6 +539,7 @@ namespace RC
 #define UE4SS_COMPILER STR("MSVC")
 #endif
 
+            UE4SS_DBG("[UE4SS] Constructor: timezone logged.\n");
             Output::send(STR("UE4SS Build Configuration: {} ({})\n"), ensure_str(UE4SS_CONFIGURATION), UE4SS_COMPILER);
 
 #ifdef _WIN32
@@ -1028,7 +1042,7 @@ namespace RC
                             if (len > 0) main_exe_path = std::string(buf, static_cast<size_t>(len));
                         }
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<SegmentInfo>*>(data);
                             const char* name = info->dlpi_name;
                             // Main executable has empty name or matches /proc/self/exe
@@ -1472,7 +1486,7 @@ namespace RC
                         struct ExecSegment { uint8_t* start; size_t size; };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
@@ -1589,7 +1603,7 @@ namespace RC
                         struct ExecSegment { uint8_t* start; size_t size; };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
@@ -1713,7 +1727,7 @@ namespace RC
                         // scanning every loaded DSO's executable segments invites a
                         // false-positive hit in a shared library and wastes scan time.
                         // Same filter as the FMalloc heuristic below.
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             const char* name = info->dlpi_name;
                             // Skip shared libraries (only process main exe with empty name)
@@ -1778,7 +1792,7 @@ namespace RC
                         struct ExecSegment { uint8_t* start; size_t size; };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
@@ -1860,7 +1874,7 @@ namespace RC
 
                         // Collect writable PT_LOAD segments from the main executable only.
                         // The main exe has dlpi_name="" (empty). Shared libraries have a path.
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<WritableSeg>*>(data);
                             const char* name = info->dlpi_name;
                             // Skip shared libraries (only process main exe with empty name)
@@ -2104,7 +2118,7 @@ namespace RC
                         };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             // Scan all executable segments, but skip libraries with high addresses
                             // (only scan the main executable which has low addresses on non-PIE)
@@ -2270,8 +2284,8 @@ namespace RC
                 // GNatives is a global array of function pointers (FNativeFuncPtr*),
                 // NOT a function itself. It lives in .data/.bss (writable segment).
                 // Each entry is a pointer to a native function in the executable segment.
-                // Heuristic: find a contiguous array of at least 64 pointers where all point
-                // into executable PT_LOAD segments.
+                // A run of function pointers also matches .init_array and vtables.
+                // Validate opcode semantics before using a candidate for VM dispatch.
                 config.ScanOverrides.gnatives = [&](std::vector<SignatureContainer>&, Unreal::Signatures::ScanResult& scan_result) {
                     void* addr = try_resolve("GNatives");
 
@@ -2290,11 +2304,14 @@ namespace RC
                         struct ScanData {
                             std::vector<ExecRange>* exec_ranges;
                             std::vector<WritableSeg>* writable_segments;
+                            const char* exe_path;
                         };
-                        ScanData scan_data{&exec_ranges, &writable_segments};
+                        const auto exe_path = m_game_path_and_exe_name.string();
+                        ScanData scan_data{&exec_ranges, &writable_segments, exe_path.c_str()};
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* sd = static_cast<ScanData*>(data);
+                            if (info->dlpi_name && info->dlpi_name[0] && strcmp(info->dlpi_name, sd->exe_path) != 0) return 0;
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
                                 if (phdr->p_type == PT_LOAD) {
@@ -2320,49 +2337,49 @@ namespace RC
                             return false;
                         };
 
-                        // Scan writable segments for a contiguous array of function pointers
-                        // GNatives typically has 256+ entries, all pointing to executable code
-                        // We look for at least 64 consecutive valid function pointers (8 bytes each)
-                        const size_t MIN_ENTRIES = 64;
-                        const size_t PTR_SIZE = 8;
-
-                        void* found_addr = nullptr;
-                        for (const auto& seg : writable_segments)
-                        {
-                            if (seg.size < MIN_ENTRIES * PTR_SIZE) continue;
-                            size_t consecutive = 0;
-                            size_t run_start = 0;
-
-                            for (size_t offset = 0; offset + PTR_SIZE <= seg.size; offset += PTR_SIZE)
-                            {
-                                uintptr_t ptr_val = *reinterpret_cast<uintptr_t*>(seg.start + offset);
-                                if (ptr_val >= 0x10000 && ptr_val <= 0x7fffffffffff && is_executable(ptr_val))
-                                {
-                                    if (consecutive == 0) run_start = offset;
-                                    consecutive++;
-                                    if (consecutive >= MIN_ENTRIES)
-                                    {
-                                        // Found a candidate — return the start of the run
-                                        found_addr = seg.start + run_start;
-                                        UE4SS_DBG("[UE4SS] Heuristic scan: GNatives candidate at %p (%zu consecutive entries)\n", found_addr, consecutive);
-                                        break;
-                                    }
-                                }
-                                else
-                                {
-                                    consecutive = 0;
+                        // These four SysV x86-64 opcode handlers store constants in
+                        // RESULT_DECL (rdx) and return. Checking their fixed opcode
+                        // positions rejects constructors, vtables and shifted tables.
+                        constexpr std::array<uint8_t, 7> int_zero{0xc7, 0x02, 0, 0, 0, 0, 0xc3};
+                        constexpr std::array<uint8_t, 7> int_one{0xc7, 0x02, 1, 0, 0, 0, 0xc3};
+                        constexpr std::array<uint8_t, 4> bool_true{0xc6, 0x02, 1, 0xc3};
+                        constexpr std::array<uint8_t, 4> bool_false{0xc6, 0x02, 0, 0xc3};
+                        auto matches_handler = [&exec_ranges](uintptr_t ptr, const auto& bytes) {
+                            for (const auto& range : exec_ranges) {
+                                if (ptr >= range.start && ptr < range.end && bytes.size() <= range.end - ptr) {
+                                    return std::memcmp(reinterpret_cast<const void*>(ptr), bytes.data(), bytes.size()) == 0;
                                 }
                             }
-                            if (found_addr) break;
+                            return false;
+                        };
+                        constexpr size_t ENTRY_COUNT = Unreal::EX_Max;
+                        constexpr size_t PTR_SIZE = sizeof(uintptr_t);
+
+                        void* found_addr = nullptr;
+                        size_t candidates = 0;
+                        for (const auto& seg : writable_segments)
+                        {
+                            for (size_t offset = 0; offset + ENTRY_COUNT * PTR_SIZE <= seg.size; offset += PTR_SIZE)
+                            {
+                                const auto* entries = reinterpret_cast<const uintptr_t*>(seg.start + offset);
+                                if (!matches_handler(entries[Unreal::EX_IntZero], int_zero) ||
+                                    !matches_handler(entries[Unreal::EX_IntOne], int_one) ||
+                                    !matches_handler(entries[Unreal::EX_True], bool_true) ||
+                                    !matches_handler(entries[Unreal::EX_False], bool_false)) continue;
+                                if (!std::all_of(entries, entries + ENTRY_COUNT, is_executable)) continue;
+                                found_addr = seg.start + offset;
+                                ++candidates;
+                            }
                         }
 
-                        if (found_addr)
+                        if (candidates == 1)
                         {
                             addr = found_addr;
+                            Output::send(STR("GNatives validated at {} ({} entries; integer and boolean opcode handlers verified).\n"), addr, ENTRY_COUNT);
                         }
                         else
                         {
-                            UE4SS_DBG("[UE4SS] Heuristic scan: GNatives not found in writable segments\n");
+                            Output::send<LogLevel::Warning>(STR("GNatives scan found {} validated tables; refusing an unverified dispatch table.\n"), candidates);
                         }
                     }
 
@@ -2437,7 +2454,7 @@ namespace RC
                         struct ExecSegment { uint8_t* start; size_t size; };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
@@ -2533,7 +2550,7 @@ namespace RC
                         struct ExecSegment { uint8_t* start; size_t size; };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
@@ -2631,7 +2648,7 @@ namespace RC
                         struct ExecSegment { uint8_t* start; size_t size; };
                         std::vector<ExecSegment> exec_segments;
 
-                        dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+                        for_each_elf_module([](struct dl_phdr_info* info, size_t, void* data) -> int {
                             auto* segs = static_cast<std::vector<ExecSegment>*>(data);
                             for (int i = 0; i < info->dlpi_phnum; i++) {
                                 const ElfW(Phdr)* phdr = &info->dlpi_phdr[i];
@@ -3896,6 +3913,7 @@ namespace RC
     auto start_mods() -> std::string
     {
         ProfilerScope();
+        constexpr auto mod_type_name = std::is_same_v<ModType, LuaMod> ? STR("Lua") : STR("C++");
 
         // Determine which mods.txt file(s) to parse
         std::vector<std::filesystem::path> mods_txt_files_to_parse;
@@ -3932,19 +3950,9 @@ namespace RC
             }
         }
 
-        // Part #2 runs first: enumerate the mods directory and install + start
-        // all mods that have enabled.txt. This installs the mods (creates their
-        // objects, calls dlopen for C++ mods) so subsequent name-based lookups
-        // will find them. Without this ordering, Part #1's mods.txt lookup
-        // would always fail with "not found or not installed" because the mods
-        // haven't been installed yet.
-
-        // Process each mods.txt file
-        // Part #2: Start all mods that have enabled.txt present in the mod directory.
-        // This runs FIRST so the mods are installed (objects created, dlopen done)
-        // before Part #1 tries to look them up by name. Without this ordering,
-        // Part #1's lookup would always fail with "not found or not installed"
-        // because the mods haven't been installed yet.
+        // setup_mods() already created the mod objects. Preserve the existing
+        // startup order: enabled.txt first, then mods.txt entries.
+        // Both the Lua and C++ passes share the same directories and mods.txt.
         for (const auto& mods_directory : UE4SSProgram::get_program().get_mods_directories())
         {
             if (!std::filesystem::exists(mods_directory))
@@ -3952,7 +3960,7 @@ namespace RC
                 continue;
             }
 
-            Output::send(STR("Starting mods (from enabled.txt ({}), no defined load order)...\n"), ensure_str(mods_directory));
+            Output::send(STR("Starting {} mods (from enabled.txt ({}), no defined load order)...\n"), mod_type_name, ensure_str(mods_directory));
 
             for (const auto& mod_directory : std::filesystem::directory_iterator(mods_directory))
             {
@@ -3976,14 +3984,15 @@ namespace RC
                     return fmt::format("exists ran into error {}", ec.value());
                 }
 
-                auto mod = UE4SSProgram::find_mod_by_name<ModType>(ensure_str(mod_directory.path().stem()), UE4SSProgram::IsInstalled::Yes);
-                if (!dynamic_cast<ModType*>(mod))
-                {
-                    continue;
-                }
+                auto mod = UE4SSProgram::find_mod_by_name<ModType>(ensure_str(mod_directory.path().stem()));
                 if (!mod)
                 {
-                    Output::send<LogLevel::Warning>(STR("Found a mod with enabled.txt but mod has not been installed properly.\n"));
+                    // A marker for the other mod type belongs to its own pass.
+                    continue;
+                }
+                if (!mod->is_installable())
+                {
+                    Output::send<LogLevel::Warning>(STR("{} mod '{}' has enabled.txt but could not be installed, skipping.\n"), mod_type_name, mod->get_name());
                     continue;
                 }
 
@@ -4005,9 +4014,7 @@ namespace RC
             }
         }
 
-        // Part #1: Start mods listed in mods.txt that haven't been started yet.
-        // Runs AFTER Part #2 so mods are installed and findable by name.
-        // The is_started() check skips mods that Part #2 already started.
+        // Start mods listed in mods.txt that the enabled.txt pass did not start.
         for (const auto& enabled_mods_file : mods_txt_files_to_parse)
         {
             if (!std::filesystem::exists(enabled_mods_file))
@@ -4017,7 +4024,7 @@ namespace RC
             else
             {
                 // 'mods.txt' exists, lets parse it
-                Output::send(STR("Starting mods (from mods.txt ({}) load order)...\n"), ensure_str(enabled_mods_file));
+                Output::send(STR("Starting {} mods (from mods.txt ({}) load order)...\n"), mod_type_name, ensure_str(enabled_mods_file));
 
                 // First, check for BOM using a byte stream
                 std::ifstream bom_check(enabled_mods_file, std::ios::binary);
@@ -4073,19 +4080,32 @@ namespace RC
                     StringType mod_name = explode_by_occurrence(current_line, STR(':'), 1);
                     StringType mod_enabled = explode_by_occurrence(current_line, STR(':'), ExplodeType::FromEnd);
 
-                    auto mod = UE4SSProgram::find_mod_by_name<ModType>(mod_name, UE4SSProgram::IsInstalled::Yes);
-                    if (!mod || !dynamic_cast<ModType*>(mod) || mod->is_started())
+                    const bool enabled = !mod_enabled.empty() && mod_enabled[0] == STR('1');
+                    auto mod = UE4SSProgram::find_mod_by_name<ModType>(mod_name);
+                    if (!mod)
                     {
-                        if (!mod)
+                        // A Lua-only mod is absent from the C++ lookup (and vice
+                        // versa). Do not report that as a missing installation.
+                        using OtherModType = std::conditional_t<std::is_same_v<ModType, LuaMod>, CppMod, LuaMod>;
+                        if (enabled && !UE4SSProgram::find_mod_by_name<OtherModType>(mod_name))
                         {
-                            Output::send<LogLevel::Warning>(STR("Mod '{}' not found or not installed, skipping.\n"), mod_name);
+                            Output::send<LogLevel::Warning>(STR("Enabled mod '{}' was not discovered ({} startup), skipping.\n"), mod_name, mod_type_name);
                         }
                         continue;
                     }
-
-                    if (!mod_enabled.empty() && mod_enabled[0] == STR('1'))
+                    if (mod->is_started())
                     {
-                        Output::send(STR("Starting {} mod '{}'\n"), std::is_same_v<ModType, LuaMod> ? STR("Lua") : STR("C++"), mod->get_name().data());
+                        continue;
+                    }
+
+                    if (enabled)
+                    {
+                        if (!mod->is_installable())
+                        {
+                            Output::send<LogLevel::Warning>(STR("{} mod '{}' was discovered but could not be installed, skipping.\n"), mod_type_name, mod_name);
+                            continue;
+                        }
+                        Output::send(STR("Starting {} mod '{}'\n"), mod_type_name, mod->get_name().data());
 #ifdef __linux__
                         bool ok = ue4ss_with_crash_recovery([&]() { mod->start_mod(); });
                         if (!ok)

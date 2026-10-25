@@ -140,6 +140,50 @@ cmake --build build_linux_Dev_gcc --target UE4SS
 # -> build_linux_Dev_gcc/Game__Dev__Linux64/lib/libUE4SS.so
 ```
 
+For an **ARM64 host running the x86_64 server through Box64**, build an x86_64
+library. A native ARM64 library cannot be loaded into the emulated game.
+Use a fresh build directory if it was previously configured with an ARM64 compiler:
+
+```bash
+sudo apt-get install -y cmake ninja-build pkg-config gcc-x86-64-linux-gnu g++-x86-64-linux-gnu
+rustup target add x86_64-unknown-linux-gnu
+cmake -B build_linux_Dev_gcc -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86_64-gcc.cmake \
+  -DCMAKE_BUILD_TYPE=Game__Dev__Linux64 \
+  -DUE4SS_GUI_ENABLED=OFF -DUE4SS_INPUT_ENABLED=OFF
+cmake --build build_linux_Dev_gcc --target UE4SS --parallel 2
+file build_linux_Dev_gcc/Game__Dev__Linux64/lib/libUE4SS.so
+```
+
+This headless build retains the Lua actor/mesh dump functions. In an ARM64 Docker
+container, configure the emulated preload in Compose:
+
+```yaml
+services:
+  palworld:
+    environment:
+      BOX64_LD_PRELOAD: /palworld/libUE4SS.so:libpthread.so.0
+```
+
+Keep the x86_64 UE4SS library out of the ARM64 shell's `LD_PRELOAD`.
+Set `UE4SS_DEBUG=1` temporarily for initialization traces written directly to
+stderr; this overrides the INI debug level. Confirm UE4SS initialization and
+mod execution as well as server startup before considering the test successful.
+
+Startup logs identify the Lua and C++ passes separately. A Lua-only mod does not
+need a C++ library and is skipped silently by the C++ pass. For each successful
+Lua entry point, look for `Lua mod '<name>': main.lua execution complete.`;
+this confirms top-level script execution, not every later gameplay callback.
+Missing enabled mods, installation failures, and script errors are still reported.
+
+On the Linux x86_64 server, the GNatives fallback scan verifies all 255 entries
+and the integer/boolean constant opcode handlers. An arbitrary run of function
+pointers can be `.init_array`, not the script VM dispatch table; using it corrupts
+bytecode argument decoding (observed with TrueMercy's `SlipDamage` hook).
+Look for `GNatives validated at ...` at startup. If no unique verified table is
+available, bytecode-originated native calls run without Lua hook callbacks and
+emit a warning; compiled-in calls can still use their existing parameter frame.
+
 Every push/PR to `linux-native` builds gcc Debug+Dev automatically
 ([Actions](../../actions)); pushing a `v*` tag publishes a GitHub Release
 with the shippable `Dev` build as a ready-to-deploy tarball.

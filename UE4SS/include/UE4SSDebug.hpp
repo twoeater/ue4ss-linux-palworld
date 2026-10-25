@@ -5,8 +5,8 @@
 
 // Global debug logging control for UE4SS on Linux.
 // Controlled by:
-//   1. UE4SS-settings.ini -> [General] DebugLogLevel = 0|1|2
-//   2. UE4SS_DEBUG environment variable (fallback if config not set)
+//   1. UE4SS_DEBUG environment variable (explicit override)
+//   2. UE4SS-settings.ini -> [General] DebugLogLevel = 0|1|2
 //
 // Levels:
 //   0 = default — only mod output and errors/warnings

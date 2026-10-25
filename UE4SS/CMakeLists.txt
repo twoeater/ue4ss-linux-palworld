@@ -59,6 +59,8 @@ file(GLOB_RECURSE UE4SS_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/**.hpp")
 if(NOT UE4SS_GUI_ENABLED)
     list(FILTER UE4SS_SOURCES EXCLUDE REGEX "/GUI/")
     list(FILTER UE4SS_HEADERS EXCLUDE REGEX "/GUI/")
+    # These dump functions are also exposed to Lua in headless servers.
+    list(APPEND UE4SS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/GUI/Dumpers.cpp")
 endif()
 
 # Filter out Input sources when Input is disabled
@@ -173,6 +175,8 @@ else()
         dl
         pthread
     )
+    # Fail the build instead of leaving unresolved entry points for the loader.
+    target_link_options(UE4SS PRIVATE "LINKER:-z,defs")
     if(DEFINED funchook_SOURCE_DIR)
         target_include_directories(UE4SS PUBLIC ${funchook_SOURCE_DIR}/include)
     endif()

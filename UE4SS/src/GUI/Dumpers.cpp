@@ -22,8 +22,57 @@
 #include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <Unreal/UnrealInitializer.hpp>
 #include <chrono>
+#ifdef HAS_GUI
 #include <imgui.h>
+#endif
 #include <glaze/glaze.hpp>
+
+namespace RC::GUI
+{
+    using namespace ::RC::Unreal;
+
+    auto is_player_controlled(UObject* object) -> bool
+    {
+        static auto IsPlayerControlled = [](UObject* pawn) -> bool {
+            static auto function = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, STR("/Script/Engine.Pawn:IsPlayerControlled"));
+            if (!function)
+            {
+                return false;
+            }
+            struct Params
+            {
+                bool ReturnValue{};
+            };
+            Params params{};
+            pawn->ProcessEvent(function, &params);
+            return params.ReturnValue;
+        };
+
+        static auto pawn = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/Engine.Pawn"));
+        if (!pawn)
+        {
+            return false;
+        }
+
+        if (object->IsA(pawn))
+        {
+            return IsPlayerControlled(object);
+        }
+
+        auto outer = object->GetOuterPrivate();
+        while (outer)
+        {
+            if (outer->IsA(pawn) && IsPlayerControlled(outer))
+            {
+                return true;
+            }
+            outer = outer->GetOuterPrivate();
+        }
+
+        return false;
+    }
+
+}
 
 namespace RC::GUI::Dumpers
 {
@@ -473,6 +522,7 @@ namespace RC::GUI::Dumpers
         Output::send(STR("Finished dumping object as JSON\n"));
     }
 
+#ifdef HAS_GUI
     auto render() -> void
     {
         if (!UnrealInitializer::StaticStorage::bIsInitialized)
@@ -556,4 +606,5 @@ namespace RC::GUI::Dumpers
             });
         }
     }
+#endif
 } // namespace RC::GUI::Dumpers

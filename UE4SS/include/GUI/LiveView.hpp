@@ -245,7 +245,6 @@ namespace RC::GUI
         static auto process_function_post_watch(Unreal::UnrealScriptFunctionCallableContext& context, void*) -> void;
     };
 
-    auto is_player_controlled(UObject* object) -> bool;
 } // namespace RC::GUI
 
 namespace std

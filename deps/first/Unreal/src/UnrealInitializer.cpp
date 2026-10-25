@@ -3,6 +3,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <limits>
 #include <unistd.h>
 
 #include <Helpers/Casting.hpp>
@@ -37,6 +38,7 @@
 #endif
 #ifndef _WIN32
 #include <link.h>
+#include <Helpers/LinuxModules.hpp>
 #include <dlfcn.h>
 #endif
 #include <Helpers/String.hpp>
@@ -155,22 +157,29 @@ namespace RC::Unreal::UnrealInitializer
         {
             std::array<WIN_MODULEINFO, static_cast<size_t>(ScanTarget::Max)>* modules_info;
             bool* is_modular;
+            const char* exe_path;
         };
+
+        char exe_path[4096]{};
+        const auto exe_length = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (exe_length > 0) exe_path[exe_length] = '\0';
 
         auto phdr_callback = [](struct dl_phdr_info* info, size_t /*size*/, void* data) -> int {
             auto* cb_data = static_cast<PhdrCallbackData*>(data);
             const char* name = info->dlpi_name;
 
-            // Skip empty names (the main executable on some systems)
-            if (!name || name[0] == '\0')
+            // glibc normally leaves this name empty; Box64 supplies the guest path.
+            if (!name || name[0] == '\0' || (cb_data->exe_path[0] && strcmp(name, cb_data->exe_path) == 0))
             {
                 // This is likely the main executable
                 // Calculate total load size from PT_LOAD segments
                 unsigned long total_size = 0;
+                unsigned long first_load = std::numeric_limits<unsigned long>::max();
                 for (int i = 0; i < info->dlpi_phnum; ++i)
                 {
                     if (info->dlpi_phdr[i].p_type == PT_LOAD)
                     {
+                        first_load = std::min(first_load, static_cast<unsigned long>(info->dlpi_phdr[i].p_vaddr));
                         unsigned long seg_end = info->dlpi_phdr[i].p_vaddr + info->dlpi_phdr[i].p_memsz;
                         if (seg_end > total_size)
                         {
@@ -179,8 +188,11 @@ namespace RC::Unreal::UnrealInitializer
                     }
                 }
                 MODULEINFO main_module{};
-                main_module.lpBaseOfDll = reinterpret_cast<void*>(info->dlpi_addr);
-                main_module.SizeOfImage = total_size;
+                if (first_load == std::numeric_limits<unsigned long>::max()) return 0;
+                // ET_EXEC has a zero load bias, not a null module base. Using the
+                // first PT_LOAD also avoids falling back to just the first maps row.
+                main_module.lpBaseOfDll = reinterpret_cast<void*>(info->dlpi_addr + first_load);
+                main_module.SizeOfImage = total_size - first_load;
                 main_module.EntryPoint = nullptr;
 
                 // Set all scan targets to the main executable (non-modular default)
@@ -240,10 +252,11 @@ namespace RC::Unreal::UnrealInitializer
 
         PhdrCallbackData cb_data{
             &SigScannerStaticData::m_modules_info.array,
-            &SigScannerStaticData::m_is_modular
+            &SigScannerStaticData::m_is_modular,
+            exe_path
         };
 
-        dl_iterate_phdr(phdr_callback, &cb_data);
+        for_each_elf_module(phdr_callback, &cb_data);
 
         // Verify that the main exe was found
         if (SigScannerStaticData::m_modules_info[ScanTarget::MainExe].lpBaseOfDll == nullptr)
@@ -480,9 +493,9 @@ namespace RC::Unreal::UnrealInitializer
     // Any check failure keeps the hardcoded fallback values.
     auto sweep_actor_vtable_offsets() -> void
     {
-        // Enumerate this executable's mappings: m_modules_info's SizeOfImage
-        // only covers the first LOAD segment (~66MB); the binary spans ~188MB
-        // and the .text with the adapter thunk is outside the first segment.
+        // Enumerate readable mappings separately: an ELF image span can contain
+        // unmapped gaps between PT_LOAD segments. The adapter thunk and vtables
+        // also live in different mappings.
         char exe_path[4096]{};
         ssize_t exe_len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
         if (exe_len <= 0)

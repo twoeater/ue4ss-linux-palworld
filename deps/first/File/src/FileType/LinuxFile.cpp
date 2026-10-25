@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
+#include <atomic>
 
 #include <File/File.hpp>
 #include <File/FileType/LinuxFile.hpp>
@@ -313,8 +315,14 @@ namespace RC::File
 
     auto LinuxFile::write_string_to_file(StringViewType string_to_write) -> void
     {
+        static std::atomic<unsigned> writes{0};
+        const char* debug = std::getenv("UE4SS_DEBUG");
+        const bool trace = debug && std::atoi(debug) > 0 && writes.fetch_add(1) < 8;
+        if (trace) fprintf(stderr, "[UE4SS] File write: converting %zu UTF-16 code units...\n", string_to_write.size());
         auto utf8_str = to_string(StringType(string_to_write));
+        if (trace) fprintf(stderr, "[UE4SS] File write: writing %zu UTF-8 bytes...\n", utf8_str.size());
         write_to_file(*this, utf8_str.c_str(), utf8_str.size());
+        if (trace) fprintf(stderr, "[UE4SS] File write: complete.\n");
     }
 
     auto LinuxFile::is_same_as(LinuxFile& other_file) -> bool
