@@ -140,8 +140,9 @@ cmake --build build_linux_Dev_gcc --target UE4SS
 # -> build_linux_Dev_gcc/Game__Dev__Linux64/lib/libUE4SS.so
 ```
 
-For an **ARM64 host running the x86_64 server through Box64**, build an x86_64
-library. A native ARM64 library cannot be loaded into the emulated game.
+For an **ARM64 host running the x86_64 server through Box64**
+(tested with [`thijsvanloef/palworld-server-docker:latest`](https://github.com/thijsvanloef/palworld-server-docker)),
+build an x86_64 library. A native ARM64 library cannot be loaded into the emulated game.
 Use a fresh build directory if it was previously configured with an ARM64 compiler:
 
 ```bash
